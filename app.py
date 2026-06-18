@@ -2,6 +2,7 @@ import streamlit as st
 import networkx as nx
 
 from config import CURRENT_DATE, PERSONAS
+from agents.persona_agent import get_reply
 
 st.set_page_config(
     page_title="Group Chat Scheduler",
@@ -127,10 +128,17 @@ with col_chat:
         send = st.form_submit_button("Send", use_container_width=True)
 
     if send and user_input.strip():
-        st.session_state["messages"].append(
-            {"role": "Alex", "content": user_input.strip()}
-        )
-        # Phase 3: persona_agent.get_reply() called here
+        msg_text = user_input.strip()
+        st.session_state["messages"].append({"role": "Alex", "content": msg_text})
+
+        with st.spinner("Thinking…"):
+            persona, reply = get_reply(
+                st.session_state["persona_selector"],
+                st.session_state["messages"],
+                msg_text,
+            )
+        st.session_state["messages"].append({"role": persona, "content": reply})
+
         # Phase 4: extraction_agent.extract() called here
         # Phase 6: conflict_agent.scan() called here
         st.rerun()
