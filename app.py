@@ -55,6 +55,49 @@ st.markdown(
         margin-left: 10px;
         vertical-align: middle;
     }
+
+    /* ── Conflict alert cards ── */
+    .conflict-card {
+        background: #fff8e1;
+        border: 1px solid #ffe082;
+        border-left: 5px solid #D9534F;
+        border-radius: 6px;
+        padding: 10px 14px;
+        margin-bottom: 8px;
+    }
+    .conflict-card-header {
+        font-size: 0.7rem;
+        font-weight: 800;
+        color: #D9534F;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        margin-bottom: 5px;
+    }
+    .conflict-card-body {
+        font-size: 0.87rem;
+        color: #333;
+        line-height: 1.5;
+    }
+    .clear-card {
+        background: #f0faf2;
+        border: 1px solid #b7dfbf;
+        border-left: 5px solid #5CB85C;
+        border-radius: 6px;
+        padding: 10px 14px;
+        font-size: 0.87rem;
+        color: #276231;
+    }
+    .conflict-badge {
+        display: inline-block;
+        background: #D9534F;
+        color: #fff;
+        border-radius: 10px;
+        padding: 1px 8px;
+        font-size: 0.68rem;
+        font-weight: 700;
+        margin-left: 8px;
+        vertical-align: middle;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -74,6 +117,10 @@ def _init_state() -> None:
 
 
 _init_state()
+
+# Re-scan on every rerun so the alert panel always reflects the current graph.
+# This is cheap (pure graph traversal, no LLM) and clears any stale alerts.
+scan_conflicts()
 
 
 # ── Helper: render one DM bubble ─────────────────────────────────────────────
@@ -139,11 +186,8 @@ with col_chat:
                 thread.append({"role": persona, "content": reply})
 
                 # Extract scheduling entities and update the knowledge graph.
+                # scan_conflicts() runs automatically at the top of the next rerun.
                 extract(persona, thread)
-
-                # Re-scan the full graph for conflicts after every update.
-                # Clears stale alerts and writes fresh ones to session state.
-                scan_conflicts()
 
                 st.rerun()
 
@@ -154,9 +198,30 @@ with col_graph:
 
     st.divider()
 
-    st.markdown("#### Conflict Alerts")
-    if st.session_state["conflicts"]:
-        for conflict in st.session_state["conflicts"]:
-            st.warning(conflict)
+    conflicts = st.session_state["conflicts"]
+    n = len(conflicts)
+    badge = f'<span class="conflict-badge">{n}</span>' if n else ""
+    st.markdown(
+        f'<h4 style="margin-bottom:0.6rem;">Conflict Alerts{badge}</h4>',
+        unsafe_allow_html=True,
+    )
+
+    if conflicts:
+        for msg in conflicts:
+            # Strip the redundant "Conflict Detected: " prefix — it's implied
+            # by the card header below.
+            body = msg.removeprefix("Conflict Detected: ")
+            st.markdown(
+                f"""
+                <div class="conflict-card">
+                    <div class="conflict-card-header">Scheduling Conflict</div>
+                    <div class="conflict-card-body">{body}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
     else:
-        st.success("No conflicts detected.")
+        st.markdown(
+            '<div class="clear-card">All clear — no scheduling conflicts detected.</div>',
+            unsafe_allow_html=True,
+        )
