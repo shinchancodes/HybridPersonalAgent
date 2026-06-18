@@ -5,6 +5,7 @@ from config import CURRENT_DATE, PERSONAS
 from agents.persona_agent import get_reply
 from agents.extraction_agent import extract
 from agents.conflict_agent import scan as scan_conflicts
+from graph.visualizer import render as render_graph
 
 st.set_page_config(
     page_title="Group Chat Scheduler",
@@ -149,12 +150,7 @@ with col_chat:
 # ── RIGHT: Unified graph + alert panel ───────────────────────────────────────
 with col_graph:
     st.markdown("### Knowledge Graph")
-
-    graph_placeholder = st.empty()
-    graph_placeholder.info(
-        "The unified knowledge graph will render here once scheduling "
-        "events are detected across any conversation. (Phase 7)"
-    )
+    render_graph(st.session_state["graph"])
 
     st.divider()
 
