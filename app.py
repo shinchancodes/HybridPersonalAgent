@@ -12,34 +12,35 @@ st.set_page_config(
 
 # ── Per-speaker visual identity ──────────────────────────────────────────────
 SPEAKER_META: dict[str, dict] = {
-    "Alex":  {"color": "#7B5EA7", "align": "right"},
-    "Bob":   {"color": "#4A90D9", "align": "left"},
-    "Annie": {"color": "#5CB85C", "align": "left"},
-    "Cindy": {"color": "#E8940A", "align": "left"},
+    "Alex":  {"color": "#7B5EA7", "bg": "#dce8ff", "align": "right"},
+    "Bob":   {"color": "#4A90D9", "bg": "#f0f2f6", "align": "left"},
+    "Annie": {"color": "#5CB85C", "bg": "#f0f2f6", "align": "left"},
+    "Cindy": {"color": "#E8940A", "bg": "#f0f2f6", "align": "left"},
 }
 
 st.markdown(
     """
     <style>
-    /* Remove default top padding so the two panels start at the same height */
     .block-container { padding-top: 1.5rem; }
 
-    .chat-bubble {
-        padding: 8px 12px;
-        border-radius: 12px;
-        margin-bottom: 6px;
-        max-width: 85%;
+    .dm-bubble {
+        padding: 8px 13px;
+        border-radius: 14px;
+        margin-bottom: 5px;
+        max-width: 78%;
         font-size: 0.92rem;
-        line-height: 1.45;
+        line-height: 1.5;
         word-wrap: break-word;
+        display: inline-block;
     }
-    .bubble-left  { background: #f0f2f6; margin-right: auto; }
-    .bubble-right { background: #dce8ff; margin-left: auto; text-align: right; }
+    .bubble-row-left  { text-align: left;  width: 100%; }
+    .bubble-row-right { text-align: right; width: 100%; }
 
-    .speaker-label {
-        font-size: 0.75rem;
+    .speaker-name {
+        font-size: 0.7rem;
         font-weight: 700;
         margin-bottom: 2px;
+        display: block;
     }
     .date-badge {
         background: #e8f4f8;
@@ -51,8 +52,6 @@ st.markdown(
         margin-left: 10px;
         vertical-align: middle;
     }
-    /* Tighten the radio row */
-    div[data-testid="stRadio"] > div { gap: 0.5rem; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -61,8 +60,8 @@ st.markdown(
 
 # ── Session state initialisation ─────────────────────────────────────────────
 def _init_state() -> None:
-    defaults = {
-        "messages": [],
+    defaults: dict = {
+        "conversations": {p: [] for p in PERSONAS},
         "graph": nx.DiGraph(),
         "conflicts": [],
     }
@@ -74,15 +73,15 @@ def _init_state() -> None:
 _init_state()
 
 
-# ── Helper: render one chat bubble ───────────────────────────────────────────
+# ── Helper: render one DM bubble ─────────────────────────────────────────────
 def render_bubble(role: str, content: str) -> None:
-    meta = SPEAKER_META.get(role, {"color": "#888", "align": "left"})
-    css_class = "bubble-right" if meta["align"] == "right" else "bubble-left"
+    meta = SPEAKER_META.get(role, {"color": "#888", "bg": "#eee", "align": "left"})
+    row_class = "bubble-row-right" if meta["align"] == "right" else "bubble-row-left"
     st.markdown(
         f"""
-        <div class="chat-bubble {css_class}">
-            <div class="speaker-label" style="color:{meta['color']};">{role}</div>
-            {content}
+        <div class="{row_class}">
+            <span class="speaker-name" style="color:{meta['color']};">{role}</span>
+            <span class="dm-bubble" style="background:{meta['bg']};">{content}</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -92,65 +91,62 @@ def render_bubble(role: str, content: str) -> None:
 # ── Two-panel layout ─────────────────────────────────────────────────────────
 col_chat, col_graph = st.columns([55, 45])
 
-# ── LEFT: Chat panel ─────────────────────────────────────────────────────────
+# ── LEFT: DM conversation panel ──────────────────────────────────────────────
 with col_chat:
     st.markdown(
-        f'<h3 style="margin-bottom:0.25rem;">Group Chat'
+        f'<h3 style="margin-bottom:0.5rem;">Messages'
         f'<span class="date-badge">Today: {CURRENT_DATE.strftime("%A, %B %d %Y")}</span>'
         f"</h3>",
         unsafe_allow_html=True,
     )
 
-    selected_persona = st.radio(
-        "Reply from:",
-        options=["Auto"] + PERSONAS,
-        horizontal=True,
-        key="persona_selector",
-    )
+    tabs = st.tabs(PERSONAS)
 
-    st.divider()
+    for tab, persona in zip(tabs, PERSONAS):
+        with tab:
+            thread = st.session_state["conversations"][persona]
 
-    # Scrollable message thread
-    chat_area = st.container(height=460, border=False)
-    with chat_area:
-        if not st.session_state["messages"]:
-            st.caption("No messages yet — type below to start the conversation.")
-        for msg in st.session_state["messages"]:
-            render_bubble(msg["role"], msg["content"])
+            # Scrollable message thread
+            chat_area = st.container(height=440, border=False)
+            with chat_area:
+                if not thread:
+                    st.caption(f"No messages yet — say something to {persona}.")
+                for msg in thread:
+                    render_bubble(msg["role"], msg["content"])
 
-    # Message input form (clear_on_submit keeps the field tidy)
-    with st.form(key="chat_form", clear_on_submit=True):
-        user_input = st.text_input(
-            "Message",
-            placeholder="Type a message as Alex…",
-            label_visibility="collapsed",
-        )
-        send = st.form_submit_button("Send", use_container_width=True)
+            # Per-conversation input form
+            with st.form(key=f"form_{persona}", clear_on_submit=True):
+                user_input = st.text_input(
+                    "Message",
+                    placeholder=f"Message {persona}…",
+                    label_visibility="collapsed",
+                    key=f"input_{persona}",
+                )
+                send = st.form_submit_button("Send", use_container_width=True)
 
-    if send and user_input.strip():
-        msg_text = user_input.strip()
-        st.session_state["messages"].append({"role": "Alex", "content": msg_text})
+            if send and user_input.strip():
+                msg_text = user_input.strip()
 
-        with st.spinner("Thinking…"):
-            persona, reply = get_reply(
-                st.session_state["persona_selector"],
-                st.session_state["messages"],
-                msg_text,
-            )
-        st.session_state["messages"].append({"role": persona, "content": reply})
+                with st.spinner(f"{persona} is typing…"):
+                    _, reply = get_reply(persona, thread, msg_text)
 
-        # Phase 4: extraction_agent.extract() called here
-        # Phase 6: conflict_agent.scan() called here
-        st.rerun()
+                # Append both turns together after inference so the history
+                # passed to get_reply never includes the current message.
+                thread.append({"role": "Alex", "content": msg_text})
+                thread.append({"role": persona, "content": reply})
 
-# ── RIGHT: Graph + alert panel ───────────────────────────────────────────────
+                # Phase 4: extraction_agent.extract(persona, thread[-2:]) called here
+                # Phase 6: conflict_agent.scan() called here
+                st.rerun()
+
+# ── RIGHT: Unified graph + alert panel ───────────────────────────────────────
 with col_graph:
     st.markdown("### Knowledge Graph")
 
     graph_placeholder = st.empty()
     graph_placeholder.info(
-        "The knowledge graph will render here automatically once scheduling "
-        "events are detected in the conversation."
+        "The unified knowledge graph will render here once scheduling "
+        "events are detected across any conversation."
     )
 
     st.divider()

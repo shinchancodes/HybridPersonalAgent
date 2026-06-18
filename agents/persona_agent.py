@@ -28,16 +28,6 @@ def _load_pipe():
     return pipe, tokenizer
 
 
-def _pick_persona(selected: str, messages: list[dict]) -> str:
-    """Resolve 'Auto' to a concrete persona via round-robin over recent replies."""
-    if selected != "Auto":
-        return selected
-    last = next((m["role"] for m in reversed(messages) if m["role"] != "Alex"), None)
-    if last is None or last not in PERSONAS:
-        return PERSONAS[0]
-    return PERSONAS[(PERSONAS.index(last) + 1) % len(PERSONAS)]
-
-
 def _build_prompt(persona: str, messages: list[dict], current_message: str, tokenizer) -> str:
     """
     Format the conversation as a single-turn Gemma chat prompt.
@@ -48,12 +38,14 @@ def _build_prompt(persona: str, messages: list[dict], current_message: str, toke
     """
     system_text = (
         f"{PERSONA_SYSTEM_PROMPTS[persona]}\n\n"
-        "You are participating in a group scheduling chat with Alex, Bob, Annie, "
-        "and Cindy. Reply ONLY as your character in 1-3 sentences. "
+        "You are in a private one-on-one conversation with Alex about scheduling. "
+        "Reply ONLY as your character in 1-3 sentences. "
         "Do NOT prefix your reply with your own name."
     )
 
-    # Build a readable history block from the rolling context window
+    # Build a readable history block from the rolling context window.
+    # `messages` contains only prior turns — the current Alex message is
+    # appended separately below, so there is no duplication.
     history_lines: list[str] = []
     for msg in messages[-CONTEXT_WINDOW:]:
         history_lines.append(f"{msg['role']}: {msg['content']}")
@@ -90,18 +82,18 @@ def _clean_reply(raw: str, persona: str) -> str:
 
 
 def get_reply(
-    selected_persona: str,
+    persona: str,
     messages: list[dict],
     current_message: str,
 ) -> tuple[str, str]:
     """
-    Generate a persona reply to Alex's latest message.
+    Generate a reply from the given persona to Alex's latest message.
+    `messages` should be the conversation history for this persona only.
 
     Returns:
         (persona_name, reply_text)
     """
     pipe, tokenizer = _load_pipe()
-    persona = _pick_persona(selected_persona, messages)
     prompt = _build_prompt(persona, messages, current_message, tokenizer)
 
     try:

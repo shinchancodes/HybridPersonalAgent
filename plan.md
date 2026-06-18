@@ -1,7 +1,7 @@
 # DL Hybrid Agent Project — Implementation Plan
 
 ## Goal
-Build a Streamlit group-chat simulator where Alex chats with three AI personas (Bob, Annie, Cindy). An LLM-backed extraction agent converts scheduling dialogue into a live NetworkX knowledge graph, and a conflict-detection agent flags calendar overlaps in real time.
+Build a Streamlit personal-chat simulator where Alex holds three separate one-on-one DM conversations with Bob, Annie, and Cindy. An LLM-backed extraction agent converts scheduling dialogue from all conversations into a single live NetworkX knowledge graph, and a conflict-detection agent flags calendar overlaps across conversations in real time.
 
 ---
 
@@ -43,7 +43,7 @@ Build a Streamlit group-chat simulator where Alex chats with three AI personas (
 └─────────────────────────────────────────────────┘
 ```
 
-**Single source of truth:** `st.session_state["graph"]` — a `nx.DiGraph` object that all agents read from and write to.
+**Single source of truth:** `st.session_state["graph"]` — a `nx.DiGraph` object shared across all three conversation threads. `st.session_state["conversations"]` holds a separate message list per persona.
 
 ---
 
@@ -89,22 +89,22 @@ DL_Project/
 ---
 
 ### Phase 2 — Streamlit Layout
-**Goal:** Two-panel UI with state wiring; no AI yet.
+**Goal:** Two-panel UI with per-conversation state wiring; no AI yet.
 
 - [ ] `app.py`: Two-column layout — `col_chat` (left, 55%) and `col_graph` (right, 45%).
-- [ ] `col_chat`: Render `st.session_state["messages"]` as styled chat bubbles (different colors per speaker). Include a `CURRENT_DATE` badge in the header. Add a persona selector (`st.selectbox` or radio: Bob / Annie / Cindy / Auto). Add a text input + submit button.
-- [ ] `col_graph`: Placeholder for the graph HTML component and a conflict alert box (`st.warning`).
-- [ ] Initialize `st.session_state`: `messages = []`, `graph = nx.DiGraph()`, `conflicts = []`.
+- [ ] `col_chat`: Conversation switcher using `st.tabs(["Bob", "Annie", "Cindy"])`. Inside each tab, render that persona's message history as styled DM bubbles — Alex's messages right-aligned, persona's messages left-aligned. Include a `CURRENT_DATE` badge in the panel header. Add a text input + Send button per tab.
+- [ ] `col_graph`: Placeholder for the unified graph HTML component and a conflict alert box (`st.warning`).
+- [ ] Initialize `st.session_state`: `conversations = {"Bob": [], "Annie": [], "Cindy": []}`, `graph = nx.DiGraph()`, `conflicts = []`.
 
 ---
 
 ### Phase 3 — Persona Agent
-**Goal:** Alex's message triggers a contextually appropriate reply from the selected persona.
+**Goal:** Alex's message in a conversation tab triggers a contextually appropriate reply from that tab's persona.
 
-- [ ] `agents/persona_agent.py`: Build a LangChain `ChatPromptTemplate` per persona using system prompts from `config.py`. Pass the last N messages as context (rolling window, default 10).
+- [ ] `agents/persona_agent.py`: Build a LangChain `ChatPromptTemplate` per persona using system prompts from `config.py`. Pass the last N messages from **that persona's conversation only** as context (rolling window, default 10).
 - [ ] Load Gemma via `transformers` pipeline (or `langchain_community.llms.HuggingFacePipeline`).
-- [ ] Return the persona's reply as a string; append both Alex's message and the persona reply to `st.session_state["messages"]`.
-- [ ] **Auto mode**: when "Auto" is selected, randomly or round-robin pick a persona to respond.
+- [ ] Return the persona's reply as a string; append both Alex's message and the persona reply to `st.session_state["conversations"][persona]`.
+- [ ] No Auto mode needed — the active tab determines which persona replies.
 
 ---
 
@@ -125,7 +125,7 @@ DL_Project/
   - Craft a few-shot prompt instructing Gemma to output **only** a JSON array of `EventEntity` objects.
   - On LLM output: parse with `json.loads`, validate with Pydantic, discard invalid entries.
   - Call `graph_store.apply_entities(entities)` to mutate the graph.
-- [ ] Run extraction after every new message (not just persona replies) to capture Alex's own scheduling intent.
+- [ ] Run extraction after every new message (not just persona replies) to capture Alex's own scheduling intent. The extractor always knows which persona's conversation the message came from, so `person` in the entity can be inferred from context.
 
 ---
 
@@ -138,7 +138,7 @@ DL_Project/
   - `add_event(entity)`: upsert `Person` node, `TimeSlot` node, `Event` node; draw edges.
   - `remove_event(entity)`: find matching edges/nodes and drop them.
   - `update_event(old, new)`: call `remove_event(old)` then `add_event(new)`.
-  - All mutations operate on `st.session_state["graph"]` directly.
+  - All mutations operate on `st.session_state["graph"]` directly — the single graph is shared across all three conversations.
 
 **Node naming convention:**
 - Person node id: `person:<name>` (lowercase)
@@ -195,9 +195,10 @@ DL_Project/
 ### Phase 10 — Verification & Acceptance Testing
 **Goal:** Validate against spec acceptance criteria.
 
-- [ ] **Critical Path 1 — Persona tone test:** Submit a 5-turn conversation targeting each of Bob, Annie, Cindy. Assert output tone matches persona definition (manual review).
-- [ ] **Critical Path 2 — Extraction pipeline test:** Feed 10 messages with complex/relative dates into the extraction agent standalone. Assert all 10 produce valid `EventEntity` JSON with correct absolute dates.
-- [ ] **Conflict detection test:** Script the Annie-coffee / Bob-sync double-booking scenario. Assert `st.session_state["conflicts"]` is non-empty after the second message.
+- [ ] **Critical Path 1 — Persona tone test:** Open each of the three conversation tabs and exchange a 5-turn dialogue. Assert each persona maintains its unique tone (manual review).
+- [ ] **Critical Path 2 — Extraction pipeline test:** Feed 10 messages spread across multiple conversation tabs with complex/relative dates into the extraction agent standalone. Assert all 10 produce valid `EventEntity` JSON with correct absolute dates.
+- [ ] **Conflict detection test:** Script the Annie-coffee / Bob-sync double-booking scenario across two separate conversation tabs. Assert `st.session_state["conflicts"]` is non-empty after the second message.
+- [ ] **Conversation isolation test:** Verify that switching tabs preserves each thread's full independent message history.
 - [ ] **Graph update speed test:** Measure time from message submit to graph rerender; assert < 1 second for the graph update step (excluding LLM inference time).
 
 ---
