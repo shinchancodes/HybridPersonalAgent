@@ -4,6 +4,7 @@ import networkx as nx
 from config import CURRENT_DATE, PERSONAS
 from agents.persona_agent import get_reply
 from agents.extraction_agent import extract
+from agents.conflict_agent import scan as scan_conflicts
 
 st.set_page_config(
     page_title="Group Chat Scheduler",
@@ -136,11 +137,13 @@ with col_chat:
                 thread.append({"role": "Alex", "content": msg_text})
                 thread.append({"role": persona, "content": reply})
 
-                # Extract scheduling entities from the latest exchange and
-                # update the shared knowledge graph (no-op until Phase 5).
+                # Extract scheduling entities and update the knowledge graph.
                 extract(persona, thread)
 
-                # Phase 6: conflict_agent.scan() called here
+                # Re-scan the full graph for conflicts after every update.
+                # Clears stale alerts and writes fresh ones to session state.
+                scan_conflicts()
+
                 st.rerun()
 
 # ── RIGHT: Unified graph + alert panel ───────────────────────────────────────
@@ -150,7 +153,7 @@ with col_graph:
     graph_placeholder = st.empty()
     graph_placeholder.info(
         "The unified knowledge graph will render here once scheduling "
-        "events are detected across any conversation."
+        "events are detected across any conversation. (Phase 7)"
     )
 
     st.divider()
