@@ -3,6 +3,7 @@ import networkx as nx
 
 from config import CURRENT_DATE, PERSONAS
 from agents.persona_agent import get_reply
+from agents.extraction_agent import extract
 
 st.set_page_config(
     page_title="Group Chat Scheduler",
@@ -135,7 +136,10 @@ with col_chat:
                 thread.append({"role": "Alex", "content": msg_text})
                 thread.append({"role": persona, "content": reply})
 
-                # Phase 4: extraction_agent.extract(persona, thread[-2:]) called here
+                # Extract scheduling entities from the latest exchange and
+                # update the shared knowledge graph (no-op until Phase 5).
+                extract(persona, thread)
+
                 # Phase 6: conflict_agent.scan() called here
                 st.rerun()
 
